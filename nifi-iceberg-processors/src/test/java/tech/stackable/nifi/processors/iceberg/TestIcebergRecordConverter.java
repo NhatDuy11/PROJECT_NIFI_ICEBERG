@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.condition.OS.WINDOWS;
+import static org.mockito.Mockito.mock;
 
 import java.io.File;
 import java.io.IOException;
@@ -641,7 +642,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, PRIMITIVES_SCHEMA, tempFile.toInputFile());
 
     assertEquals(results.size(), 1);
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     OffsetDateTime offsetDateTime = OffsetDateTime.of(LOCAL_DATE_TIME, ZoneOffset.ofHours(-5));
 
@@ -675,7 +676,7 @@ public class TestIcebergRecordConverter {
   public void testPrimitivesIgnoreMissingFields(FileFormat format) throws IOException {
     RecordSchema nifiSchema = getPrimitivesSchemaMissingFields();
     Record record = setupPrimitivesTestRecordMissingFields();
-    MockComponentLog mockComponentLogger = new MockComponentLog("id", "TestIcebergRecordConverter");
+    ComponentLog mockLog = mock(ComponentLog.class);
 
     IcebergRecordConverter recordConverter =
         new IcebergRecordConverter(
@@ -683,7 +684,7 @@ public class TestIcebergRecordConverter {
             nifiSchema,
             format,
             UnmatchedColumnBehavior.IGNORE_UNMATCHED_COLUMN,
-            mockComponentLogger);
+            mockLog);
     GenericRecord genericRecord = recordConverter.convert(record);
 
     writeTo(format, PRIMITIVES_SCHEMA, genericRecord, tempFile);
@@ -691,7 +692,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, PRIMITIVES_SCHEMA, tempFile.toInputFile());
 
     assertEquals(results.size(), 1);
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     OffsetDateTime offsetDateTime = OffsetDateTime.of(LOCAL_DATE_TIME, ZoneOffset.ofHours(-5));
 
@@ -726,7 +727,7 @@ public class TestIcebergRecordConverter {
     results = readFrom(format, PRIMITIVES_SCHEMA, tempFile.toInputFile());
 
     assertEquals(results.size(), 1);
-    resultRecord = results.getFirst();
+    resultRecord = results.get(0);
     assertNull(resultRecord.get(0, String.class));
     assertNull(resultRecord.get(1, Integer.class));
     assertNull(resultRecord.get(2, Float.class));
@@ -749,7 +750,7 @@ public class TestIcebergRecordConverter {
       names = {"AVRO", "ORC", "PARQUET"})
   public void testPrimitivesMissingRequiredFields(FileFormat format) {
     RecordSchema nifiSchema = getPrimitivesSchemaMissingFields();
-    MockComponentLog mockComponentLogger = new MockComponentLog("id", "TestIcebergRecordConverter");
+    ComponentLog mockLog = mock(ComponentLog.class);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -759,7 +760,7 @@ public class TestIcebergRecordConverter {
                 nifiSchema,
                 format,
                 UnmatchedColumnBehavior.IGNORE_UNMATCHED_COLUMN,
-                mockComponentLogger));
+                mockLog));
   }
 
   @DisabledOnOs(WINDOWS)
@@ -770,7 +771,7 @@ public class TestIcebergRecordConverter {
   public void testPrimitivesWarnMissingFields(FileFormat format) throws IOException {
     RecordSchema nifiSchema = getPrimitivesSchemaMissingFields();
     Record record = setupPrimitivesTestRecordMissingFields();
-    MockComponentLog mockComponentLogger = new MockComponentLog("id", "TestIcebergRecordConverter");
+    ComponentLog mockLog = mock(ComponentLog.class);
 
     IcebergRecordConverter recordConverter =
         new IcebergRecordConverter(
@@ -778,7 +779,7 @@ public class TestIcebergRecordConverter {
             nifiSchema,
             format,
             UnmatchedColumnBehavior.WARNING_UNMATCHED_COLUMN,
-            mockComponentLogger);
+            mockLog);
     GenericRecord genericRecord = recordConverter.convert(record);
 
     writeTo(format, PRIMITIVES_SCHEMA, genericRecord, tempFile);
@@ -786,7 +787,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, PRIMITIVES_SCHEMA, tempFile.toInputFile());
 
     assertEquals(results.size(), 1);
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     OffsetDateTime offsetDateTime = OffsetDateTime.of(LOCAL_DATE_TIME, ZoneOffset.ofHours(-5));
 
@@ -817,7 +818,7 @@ public class TestIcebergRecordConverter {
       names = {"AVRO", "ORC", "PARQUET"})
   public void testPrimitivesFailMissingFields(FileFormat format) {
     RecordSchema nifiSchema = getPrimitivesSchemaMissingFields();
-    MockComponentLog mockComponentLogger = new MockComponentLog("id", "TestIcebergRecordConverter");
+    ComponentLog mockLog = mock(ComponentLog.class);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -827,7 +828,7 @@ public class TestIcebergRecordConverter {
                 nifiSchema,
                 format,
                 UnmatchedColumnBehavior.FAIL_UNMATCHED_COLUMN,
-                mockComponentLogger));
+                mockLog));
   }
 
   @DisabledOnOs(WINDOWS)
@@ -852,7 +853,7 @@ public class TestIcebergRecordConverter {
         readFrom(format, COMPATIBLE_PRIMITIVES_SCHEMA, tempFile.toInputFile());
 
     assertEquals(results.size(), 1);
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     final ZonedDateTime zonedDateTime = ZonedDateTime.of(LOCAL_DATE_TIME, ZoneId.systemDefault());
     OffsetDateTime offsetDateTime = zonedDateTime.toOffsetDateTime();
@@ -897,7 +898,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, STRUCT_SCHEMA, tempFile.toInputFile());
 
     assertEquals(1, results.size());
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     assertEquals(1, resultRecord.size());
     assertInstanceOf(GenericRecord.class, resultRecord.get(0));
@@ -932,7 +933,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, LIST_SCHEMA, tempFile.toInputFile());
 
     assertEquals(1, results.size());
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     assertEquals(1, resultRecord.size());
     assertInstanceOf(List.class, resultRecord.get(0));
@@ -969,7 +970,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, MAP_SCHEMA, tempFile.toInputFile());
 
     assertEquals(1, results.size());
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     assertEquals(1, resultRecord.size());
     assertInstanceOf(Map.class, resultRecord.get(0));
@@ -1110,7 +1111,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, CASE_INSENSITIVE_SCHEMA, tempFile.toInputFile());
 
     assertEquals(1, results.size());
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     assertEquals("Text1", resultRecord.get(0, String.class));
     assertEquals("Text2", resultRecord.get(1, String.class));
@@ -1139,7 +1140,7 @@ public class TestIcebergRecordConverter {
     List<GenericRecord> results = readFrom(format, UNORDERED_SCHEMA, tempFile.toInputFile());
 
     assertEquals(1, results.size());
-    GenericRecord resultRecord = results.getFirst();
+    GenericRecord resultRecord = results.get(0);
 
     assertEquals("value1", resultRecord.get(0, String.class));
 
@@ -1216,12 +1217,16 @@ public class TestIcebergRecordConverter {
 
   private ArrayList<GenericRecord> readFrom(FileFormat format, Schema schema, InputFile inputFile)
       throws IOException {
-    return switch (format) {
-      case AVRO -> readFromAvro(schema, inputFile);
-      case ORC -> readFromOrc(schema, inputFile);
-      case PARQUET -> readFromParquet(schema, inputFile);
-      default -> throw new IOException("Unknown file format: " + format);
-    };
+    switch (format) {
+      case AVRO:
+        return readFromAvro(schema, inputFile);
+      case ORC:
+        return readFromOrc(schema, inputFile);
+      case PARQUET:
+        return readFromParquet(schema, inputFile);
+      default:
+        throw new IOException("Unknown file format: " + format);
+    }
   }
 
   private void writeToAvro(Schema schema, GenericRecord record, OutputFile outputFile)

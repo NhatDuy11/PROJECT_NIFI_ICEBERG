@@ -60,7 +60,7 @@ public abstract class AbstractIcebergProcessor extends AbstractProcessor
           .name("catalog-service")
           .displayName("Catalog Service")
           .description(
-              "Specifies the Controller Service to use for handling references to table’s metadata files.")
+              "Specifies the Controller Service to use for handling references to table's metadata files.")
           .identifiesControllerService(IcebergCatalogService.class)
           .required(true)
           .build();
@@ -84,6 +84,32 @@ public abstract class AbstractIcebergProcessor extends AbstractProcessor
           .required(true)
           .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
           .build();
+
+  // Thêm property để bật/tắt auto create table
+  protected static final PropertyDescriptor AUTO_CREATE_TABLE =
+      new PropertyDescriptor.Builder()
+          .name("auto-create-table")
+          .displayName("Auto Create Table")
+          .description(
+              "Automatically create Iceberg table if it doesn't exist. The table schema will be inferred from the incoming record schema.")
+          .required(false)
+          .allowableValues("true", "false")
+          .defaultValue("false")
+          .build();
+
+  // Thêm property để cấu hình file format mặc định khi tạo bảng
+  // protected static final PropertyDescriptor DEFAULT_FILE_FORMAT =
+  //     new PropertyDescriptor.Builder()
+  //         .name("default-file-format")
+  //         .displayName("Default File Format")
+  //         .description(
+  //             "Default file format to use when auto-creating tables. Only used when Auto Create
+  // Table is enabled.")
+  //         .required(false)
+  //         .allowableValues("PARQUET", "AVRO", "ORC")
+  //         .defaultValue("PARQUET")
+  //         .dependsOn(AUTO_CREATE_TABLE, "true")
+  //         .build();
 
   protected static final PropertyDescriptor KERBEROS_USER_SERVICE =
       new PropertyDescriptor.Builder()

@@ -18,14 +18,13 @@
 package tech.stackable.nifi.processors.iceberg.converter;
 
 import java.io.Serializable;
-import java.sql.Time;
-import java.sql.Timestamp;
-import java.time.LocalDate;
-import java.util.Optional;
+import java.text.SimpleDateFormat;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.List;
+import java.util.Locale;
 import javax.annotation.Nullable;
 import org.apache.nifi.serialization.record.DataType;
-import org.apache.nifi.serialization.record.field.FieldConverter;
-import org.apache.nifi.serialization.record.field.StandardFieldConverterRegistry;
 import org.apache.nifi.serialization.record.type.ArrayDataType;
 import org.apache.nifi.serialization.record.type.ChoiceDataType;
 import org.apache.nifi.serialization.record.type.EnumDataType;
@@ -68,21 +67,15 @@ public class ArrayElementGetter {
         break;
       case DATE:
         elementGetter =
-            element -> {
-              final FieldConverter<Object, LocalDate> converter =
-                  StandardFieldConverterRegistry.getRegistry().getFieldConverter(LocalDate.class);
-              return converter.convertField(
-                  element, Optional.ofNullable(dataType.getFormat()), ARRAY_FIELD_NAME);
-            };
+            element ->
+                DataTypeUtils.toLocalDate(
+                    element, () -> DateTimeFormatter.ISO_LOCAL_DATE, ARRAY_FIELD_NAME);
         break;
       case TIME:
         elementGetter =
-            element -> {
-              final FieldConverter<Object, Time> converter =
-                  StandardFieldConverterRegistry.getRegistry().getFieldConverter(Time.class);
-              return converter.convertField(
-                  element, Optional.ofNullable(dataType.getFormat()), ARRAY_FIELD_NAME);
-            };
+            element ->
+                DataTypeUtils.toTime(
+                    element, () -> new SimpleDateFormat("HH:mm:ss"), ARRAY_FIELD_NAME);
         break;
       case LONG:
         elementGetter = element -> DataTypeUtils.toLong(element, ARRAY_FIELD_NAME);
@@ -99,12 +92,45 @@ public class ArrayElementGetter {
       case TIMESTAMP:
         elementGetter =
             element -> {
-              final FieldConverter<Object, Timestamp> converter =
-                  StandardFieldConverterRegistry.getRegistry().getFieldConverter(Timestamp.class);
-              return converter.convertField(
-                  element, Optional.ofNullable(dataType.getFormat()), ARRAY_FIELD_NAME);
+              if (element == null) {
+                return null;
+              }
+
+              String raw = element.toString().trim();
+
+              List<DateTimeFormatter> formatters =
+                  List.of(
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS"),
+                      DateTimeFormatter.ofPattern("dd-MMM-yy hh.mm.ss.SSSSSSSSS a", Locale.ENGLISH),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                      DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss.SSSSSS"),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss.SSS"),
+                      DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss"));
+
+              for (DateTimeFormatter formatter : formatters) {
+                try {
+                  return java.time.LocalDateTime.parse(raw, formatter);
+                } catch (DateTimeParseException ignored) {
+
+                } catch (Exception e) {
+
+                  System.err.println(
+                      "Unexpected error parsing timestamp with formatter "
+                          + formatter
+                          + ": "
+                          + e.getMessage());
+                }
+              }
+
+              throw new IllegalArgumentException("Unparseable timestamp: " + raw);
             };
         break;
+
       case ENUM:
         elementGetter =
             element -> DataTypeUtils.toEnum(element, (EnumDataType) dataType, ARRAY_FIELD_NAME);

@@ -42,7 +42,7 @@ public abstract class AbstractCatalogService extends AbstractControllerService
           .displayName("Default Warehouse Location")
           .description(
               "Location of default database for the warehouse, e.g. \"s3a://mybucket/lakehouse\".")
-          .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+          .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
           .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
           .required(true)
           .build();
@@ -52,7 +52,7 @@ public abstract class AbstractCatalogService extends AbstractControllerService
           .name("s3-endpoint")
           .displayName("S3 endpoint")
           .description("Custom S3 endpoint in the format of an URL, e.g. \"http://minio:9000\".")
-          .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+          .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
           .addValidator(StandardValidators.URL_VALIDATOR)
           .required(false)
           .build();
@@ -86,7 +86,7 @@ public abstract class AbstractCatalogService extends AbstractControllerService
                   + "Without this, default configuration will be used.")
           .required(false)
           .identifiesExternalResource(ResourceCardinality.MULTIPLE, ResourceType.FILE)
-          .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+          .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
           .build();
 
   protected static final List<PropertyDescriptor> COMMON_PROPERTIES =

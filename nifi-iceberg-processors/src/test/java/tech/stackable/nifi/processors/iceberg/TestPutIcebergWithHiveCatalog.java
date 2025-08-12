@@ -69,12 +69,8 @@ public class TestPutIcebergWithHiveCatalog extends AbstractTestPutIceberg {
     final AWSCredentialsProviderService credentialsProvider =
         new AWSCredentialsProviderControllerService();
     runner.addControllerService("credentials-provider", credentialsProvider);
-    runner.setProperty(
-        credentialsProvider,
-        AWSCredentialsProviderControllerService.ACCESS_KEY_ID,
-        "my-access-key");
-    runner.setProperty(
-        credentialsProvider, AWSCredentialsProviderControllerService.SECRET_KEY, "my-secret-key");
+    runner.setProperty(credentialsProvider, "Access Key ID", "my-access-key");
+    runner.setProperty(credentialsProvider, "Secret Access Key", "my-secret-key");
     runner.enableControllerService(credentialsProvider);
 
     final IcebergHiveCatalogService catalogService = new IcebergHiveCatalogService();
@@ -116,8 +112,7 @@ public class TestPutIcebergWithHiveCatalog extends AbstractTestPutIceberg {
             .build();
 
     runner.assertTransferCount(PutIceberg.REL_SUCCESS, 1);
-    final MockFlowFile flowFile =
-        runner.getFlowFilesForRelationship(PutIceberg.REL_SUCCESS).getFirst();
+    final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutIceberg.REL_SUCCESS).get(0);
 
     final String tableLocation = new URI(table.location()).getPath();
     assertTrue(table.spec().isPartitioned());
@@ -155,8 +150,7 @@ public class TestPutIcebergWithHiveCatalog extends AbstractTestPutIceberg {
             .build();
 
     runner.assertTransferCount(PutIceberg.REL_SUCCESS, 1);
-    final MockFlowFile flowFile =
-        runner.getFlowFilesForRelationship(PutIceberg.REL_SUCCESS).getFirst();
+    final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutIceberg.REL_SUCCESS).get(0);
 
     final String tableLocation = new URI(table.location()).getPath();
     assertTrue(table.spec().isPartitioned());
@@ -200,8 +194,7 @@ public class TestPutIcebergWithHiveCatalog extends AbstractTestPutIceberg {
             .build();
 
     runner.assertTransferCount(PutIceberg.REL_SUCCESS, 1);
-    final MockFlowFile flowFile =
-        runner.getFlowFilesForRelationship(PutIceberg.REL_SUCCESS).getFirst();
+    final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutIceberg.REL_SUCCESS).get(0);
 
     assertTrue(table.spec().isUnpartitioned());
     assertEquals("4", flowFile.getAttribute(ICEBERG_RECORD_COUNT));
@@ -215,7 +208,7 @@ public class TestPutIcebergWithHiveCatalog extends AbstractTestPutIceberg {
   private void assertProvenanceEvents() {
     final List<ProvenanceEventRecord> provenanceEvents = runner.getProvenanceEvents();
     assertEquals(1, provenanceEvents.size());
-    final ProvenanceEventRecord sendEvent = provenanceEvents.getFirst();
+    final ProvenanceEventRecord sendEvent = provenanceEvents.get(0);
     assertEquals(ProvenanceEventType.SEND, sendEvent.getEventType());
     assertTrue(sendEvent.getTransitUri().endsWith(CATALOG_NAME + ".db/" + TABLE_NAME));
   }

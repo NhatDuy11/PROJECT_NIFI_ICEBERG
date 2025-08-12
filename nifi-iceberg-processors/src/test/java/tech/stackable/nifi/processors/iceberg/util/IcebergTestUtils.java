@@ -31,6 +31,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.Validate;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
@@ -100,7 +101,7 @@ public class IcebergTestUtils {
         Files.walk(Paths.get(tableLocation + "/data"))
             .filter(Files::isRegularFile)
             .filter(path -> !path.getFileName().toString().startsWith("."))
-            .toList();
+            .collect(Collectors.toList());
 
     assertEquals(numberOfDataFiles, dataFiles.size());
   }

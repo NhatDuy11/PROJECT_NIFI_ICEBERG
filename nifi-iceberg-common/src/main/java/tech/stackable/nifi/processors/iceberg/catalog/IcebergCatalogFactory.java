@@ -37,9 +37,13 @@ public class IcebergCatalogFactory {
   }
 
   public Catalog create() {
-    return switch (catalogService.getCatalogType()) {
-      case HIVE -> initHiveCatalog(catalogService);
-    };
+    switch (catalogService.getCatalogType()) {
+      case HIVE:
+        return initHiveCatalog(catalogService);
+      default:
+        throw new UnsupportedOperationException(
+            "Unsupported catalog type: " + catalogService.getCatalogType());
+    }
   }
 
   private Catalog initHiveCatalog(IcebergCatalogService catalogService) {

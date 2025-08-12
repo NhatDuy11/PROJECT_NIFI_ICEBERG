@@ -106,8 +106,8 @@ public class PutIceberg extends AbstractIcebergProcessor {
           .displayName("Unmatched Column Behavior")
           .description(
               "If an incoming record does not have a field mapping for all of the database table's columns, this property specifies how to handle the situation.")
-          .allowableValues(UnmatchedColumnBehavior.class)
-          .defaultValue(UnmatchedColumnBehavior.FAIL_UNMATCHED_COLUMN)
+          .allowableValues(UnmatchedColumnBehavior.values())
+          .defaultValue(UnmatchedColumnBehavior.FAIL_UNMATCHED_COLUMN.name())
           .required(true)
           .build();
 
@@ -189,6 +189,7 @@ public class PutIceberg extends AbstractIcebergProcessor {
           CATALOG,
           CATALOG_NAMESPACE,
           TABLE_NAME,
+          AUTO_CREATE_TABLE,
           UNMATCHED_COLUMN_BEHAVIOR,
           FILE_FORMAT,
           MAXIMUM_FILE_SIZE,
@@ -255,15 +256,20 @@ public class PutIceberg extends AbstractIcebergProcessor {
     try (final InputStream in = session.read(flowFile);
         final RecordReader reader = readerFactory.createRecordReader(flowFile, in, getLogger())) {
       catalog = loadCatalog(context);
-      table = loadTable(context, flowFile, catalog);
+
+      // Get record schema for potential table creation
+      final org.apache.nifi.serialization.record.RecordSchema recordSchema = reader.getSchema();
+
+      // Load or create table with auto-create support
+      table = loadOrCreateTable(context, flowFile, catalog, recordSchema);
+
       final FileFormat format = getFileFormat(table.properties(), fileFormat);
       final IcebergTaskWriterFactory taskWriterFactory =
           new IcebergTaskWriterFactory(table, flowFile.getId(), format, maximumFileSize);
       taskWriter = taskWriterFactory.create();
       final UnmatchedColumnBehavior unmatchedColumnBehavior =
-          context
-              .getProperty(UNMATCHED_COLUMN_BEHAVIOR)
-              .asAllowableValue(UnmatchedColumnBehavior.class);
+          UnmatchedColumnBehavior.valueOf(
+              context.getProperty(UNMATCHED_COLUMN_BEHAVIOR).getValue());
 
       final IcebergRecordConverter recordConverter =
           new IcebergRecordConverter(
@@ -306,14 +312,21 @@ public class PutIceberg extends AbstractIcebergProcessor {
   }
 
   /**
-   * Loads a table from the catalog service with the provided values from the property context.
+   * Loads a table from the catalog service with the provided values from the property context. If
+   * auto-create is enabled and table doesn't exist, creates it automatically.
    *
    * @param context holds the user provided information for the {@link Catalog} and the {@link
    *     Table}
-   * @return loaded table
+   * @param flowFile the current flow file
+   * @param catalog the catalog instance
+   * @param recordSchema the record schema for auto-creation (if needed)
+   * @return loaded or created table
    */
-  private Table loadTable(
-      final PropertyContext context, final FlowFile flowFile, final Catalog catalog) {
+  private Table loadOrCreateTable(
+      final PropertyContext context,
+      final FlowFile flowFile,
+      final Catalog catalog,
+      final org.apache.nifi.serialization.record.RecordSchema recordSchema) {
     final String catalogNamespace =
         context.getProperty(CATALOG_NAMESPACE).evaluateAttributeExpressions(flowFile).getValue();
     final String tableName =
@@ -322,7 +335,24 @@ public class PutIceberg extends AbstractIcebergProcessor {
     final Namespace namespace = Namespace.of(catalogNamespace);
     final TableIdentifier tableIdentifier = TableIdentifier.of(namespace, tableName);
 
-    return catalog.loadTable(tableIdentifier);
+    // Check if auto-create is enabled
+    final boolean autoCreateTable = context.getProperty(AUTO_CREATE_TABLE).asBoolean();
+
+    if (autoCreateTable) {
+      try {
+        // Use FILE_FORMAT property instead of DEFAULT_FILE_FORMAT
+        final String fileFormat = context.getProperty(FILE_FORMAT).getValue();
+        // If FILE_FORMAT is not set, default to PARQUET
+        final String defaultFileFormat = fileFormat != null ? fileFormat : "PARQUET";
+        return IcebergTableCreator.createTableIfNotExists(
+            catalog, tableIdentifier, recordSchema, defaultFileFormat, getLogger());
+      } catch (Exception e) {
+        throw new ProcessException("Failed to create table automatically: " + tableIdentifier, e);
+      }
+    } else {
+      // Original behavior - just load the table
+      return catalog.loadTable(tableIdentifier);
+    }
   }
 
   private Catalog loadCatalog(final PropertyContext context) {

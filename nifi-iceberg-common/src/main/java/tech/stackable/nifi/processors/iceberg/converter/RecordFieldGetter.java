@@ -19,14 +19,13 @@ package tech.stackable.nifi.processors.iceberg.converter;
 
 import java.io.Serializable;
 import java.sql.Time;
-import java.sql.Timestamp;
-import java.time.LocalDate;
-import java.util.Optional;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Locale;
 import javax.annotation.Nullable;
 import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.field.FieldConverter;
-import org.apache.nifi.serialization.record.field.StandardFieldConverterRegistry;
 import org.apache.nifi.serialization.record.type.ArrayDataType;
 import org.apache.nifi.serialization.record.type.ChoiceDataType;
 import org.apache.nifi.serialization.record.type.EnumDataType;
@@ -71,20 +70,34 @@ public class RecordFieldGetter {
         break;
       case DATE:
         fieldGetter =
-            record -> {
-              final FieldConverter<Object, LocalDate> converter =
-                  StandardFieldConverterRegistry.getRegistry().getFieldConverter(LocalDate.class);
-              return converter.convertField(
-                  record.getValue(fieldName), Optional.ofNullable(dataType.getFormat()), fieldName);
-            };
+            record ->
+                DataTypeUtils.toLocalDate(
+                    record.getValue(fieldName),
+                    () -> java.time.format.DateTimeFormatter.ISO_LOCAL_DATE,
+                    fieldName);
         break;
+
       case TIME:
         fieldGetter =
             record -> {
-              final FieldConverter<Object, Time> converter =
-                  StandardFieldConverterRegistry.getRegistry().getFieldConverter(Time.class);
-              return converter.convertField(
-                  record.getValue(fieldName), Optional.ofNullable(dataType.getFormat()), fieldName);
+              Object value = record.getValue(fieldName);
+              if (value == null) {
+                return null;
+              }
+              if (value instanceof Time) {
+                return value;
+              }
+              if (value instanceof String) {
+                String raw = ((String) value).trim();
+                try {
+                  LocalTime localTime =
+                      LocalTime.parse(raw, DateTimeFormatter.ofPattern("HH:mm:ss"));
+                  return Time.valueOf(localTime);
+                } catch (java.time.format.DateTimeParseException e) {
+                  throw new IllegalArgumentException("Unparseable time string: " + raw, e);
+                }
+              }
+              throw new IllegalArgumentException("Unsupported type for time: " + value.getClass());
             };
         break;
       case LONG:
@@ -102,10 +115,48 @@ public class RecordFieldGetter {
       case TIMESTAMP:
         fieldGetter =
             record -> {
-              final FieldConverter<Object, Timestamp> converter =
-                  StandardFieldConverterRegistry.getRegistry().getFieldConverter(Timestamp.class);
-              return converter.convertField(
-                  record.getValue(fieldName), Optional.ofNullable(dataType.getFormat()), fieldName);
+              Object value = record.getValue(fieldName);
+              if (value == null) {
+                return null;
+              }
+              if (value instanceof java.sql.Timestamp) {
+                return value;
+              }
+              if (value instanceof java.time.LocalDateTime) {
+                return java.sql.Timestamp.valueOf((java.time.LocalDateTime) value);
+              }
+              if (value instanceof String) {
+                String raw = ((String) value).trim();
+
+                List<DateTimeFormatter> formatters =
+                    List.of(
+                        java.time.format.DateTimeFormatter.ofPattern(
+                            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                        java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss.SSSSSS"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss.SSS"),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss"),
+                        java.time.format.DateTimeFormatter.ofPattern(
+                            "dd-MMM-yy hh.mm.ss.SSSSSSSSS a", Locale.ENGLISH));
+
+                for (java.time.format.DateTimeFormatter formatter : formatters) {
+                  try {
+                    java.time.LocalDateTime localDateTime =
+                        java.time.LocalDateTime.parse(raw, formatter);
+                    return java.sql.Timestamp.valueOf(localDateTime);
+                  } catch (java.time.format.DateTimeParseException ignored) {
+                    // Try next formatter
+                  }
+                }
+                throw new IllegalArgumentException("Unparseable timestamp string: " + raw);
+              }
+              throw new IllegalArgumentException(
+                  "Unsupported type for timestamp: " + value.getClass());
             };
         break;
       case UUID:

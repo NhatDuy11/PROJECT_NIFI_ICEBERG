@@ -1,2 +1,18 @@
 target/
 .idea/
+
+# NiFi extension directories - không push lên GitHub
+nifi_extensions/
+nifi_iceberg_version_new/
+
+# Các file JAR và NAR build artifacts
+*.jar
+*.nar
+
+# IDE files
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db

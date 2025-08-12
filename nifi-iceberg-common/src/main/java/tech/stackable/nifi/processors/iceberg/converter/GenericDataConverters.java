@@ -20,16 +20,12 @@ import static tech.stackable.nifi.processors.iceberg.converter.RecordFieldGetter
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.Validate;
 import org.apache.iceberg.data.GenericRecord;
@@ -41,8 +37,6 @@ import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.serialization.record.field.FieldConverter;
-import org.apache.nifi.serialization.record.field.StandardFieldConverterRegistry;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 
 /** Data converter implementations for different data types. */
@@ -71,65 +65,239 @@ public class GenericDataConverters {
         case DOUBLE:
           return DataTypeUtils.toDouble(data, null);
         case DATE:
-          final FieldConverter<Object, LocalDate> converter =
-              StandardFieldConverterRegistry.getRegistry().getFieldConverter(LocalDate.class);
-          return converter.convertField(data, Optional.ofNullable(sourceType.getFormat()), null);
+          return convertToLocalDate(data);
         case UUID:
           return DataTypeUtils.toUUID(data);
         case STRING:
         default:
-          return StandardFieldConverterRegistry.getRegistry()
-              .getFieldConverter(String.class)
-              .convertField(data, Optional.empty(), null);
+          return DataTypeUtils.toString(data, (String) null);
       }
     }
+  }
+
+  private static LocalDate convertToLocalDate(Object data) {
+    if (data == null) {
+      return null;
+    }
+
+    if (data instanceof LocalDate) {
+      return (LocalDate) data;
+    }
+
+    if (data instanceof java.sql.Date) {
+      return ((java.sql.Date) data).toLocalDate();
+    }
+
+    if (data instanceof String) {
+      String raw = ((String) data).trim();
+
+      List<DateTimeFormatter> formatters =
+          List.of(
+              DateTimeFormatter.ofPattern("dd-MMM-yy", Locale.ENGLISH), // Oracle default
+              DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+              DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+              DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+              DateTimeFormatter.ISO_LOCAL_DATE);
+
+      for (DateTimeFormatter f : formatters) {
+        try {
+          return LocalDate.parse(raw, f);
+        } catch (DateTimeParseException ignored) {
+        }
+      }
+
+      throw new IllegalArgumentException("Unparseable LocalDate string: " + raw);
+    }
+
+    throw new IllegalArgumentException("Unsupported type for LocalDate: " + data.getClass());
   }
 
   static class TimeConverter extends DataConverter<Object, LocalTime> {
 
     private final String timeFormat;
 
-    public TimeConverter(final String format) {
-      this.timeFormat = format;
+    public TimeConverter(String timeFormat) {
+      this.timeFormat = timeFormat;
     }
 
     @Override
     public LocalTime convert(Object data) {
-      final FieldConverter<Object, LocalTime> converter =
-          StandardFieldConverterRegistry.getRegistry().getFieldConverter(LocalTime.class);
-      return converter.convertField(data, Optional.ofNullable(timeFormat), null);
+      if (data == null) {
+        return null;
+      }
+
+      if (data instanceof Time) {
+        return ((Time) data).toLocalTime();
+      }
+
+      if (data instanceof String) {
+        String raw = ((String) data).trim();
+
+        List<DateTimeFormatter> formatters = new ArrayList<>();
+
+        if (timeFormat != null) {
+          formatters.add(DateTimeFormatter.ofPattern(timeFormat));
+        }
+
+        formatters.addAll(
+            List.of(
+                DateTimeFormatter.ofPattern("HH:mm:ss"),
+                DateTimeFormatter.ofPattern("HH.mm.ss"),
+                DateTimeFormatter.ISO_LOCAL_TIME));
+
+        for (DateTimeFormatter formatter : formatters) {
+          try {
+            return LocalTime.parse(raw, formatter);
+          } catch (DateTimeParseException ignored) {
+          }
+        }
+
+        throw new IllegalArgumentException("Unparseable time string: " + raw);
+      }
+
+      throw new IllegalArgumentException("Unsupported type for time: " + data.getClass());
     }
   }
 
   static class TimestampConverter extends DataConverter<Object, LocalDateTime> {
 
-    private final DataType dataType;
-
-    public TimestampConverter(final DataType dataType) {
-      this.dataType = dataType;
-    }
+    public TimestampConverter(DataType dataType) {}
 
     @Override
     public LocalDateTime convert(Object data) {
-      final FieldConverter<Object, LocalDateTime> converter =
-          StandardFieldConverterRegistry.getRegistry().getFieldConverter(LocalDateTime.class);
-      return converter.convertField(data, Optional.ofNullable(dataType.getFormat()), null);
+      if (data == null) {
+        return null;
+      }
+
+      if (data instanceof Timestamp) {
+        return ((Timestamp) data).toLocalDateTime();
+      }
+
+      if (data instanceof String) {
+        String raw = ((String) data).trim();
+
+        List<DateTimeFormatter> formatters =
+            List.of(
+                DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+                DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss.SSSSSS"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss.SSS"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd-HH.mm.ss"),
+                DateTimeFormatter.ofPattern("dd-MMM-yy hh.mm.ss.SSSSSSSSS a", Locale.ENGLISH));
+
+        for (DateTimeFormatter formatter : formatters) {
+          try {
+            return LocalDateTime.parse(raw, formatter);
+          } catch (DateTimeParseException ignored) {
+          }
+        }
+
+        throw new IllegalArgumentException("Unparseable timestamp string: " + raw);
+      }
+
+      throw new IllegalArgumentException("Unsupported type for timestamp: " + data.getClass());
     }
   }
 
   static class TimestampWithTimezoneConverter extends DataConverter<Object, OffsetDateTime> {
 
-    private final DataType dataType;
+    private final String format;
 
-    public TimestampWithTimezoneConverter(final DataType dataType) {
-      this.dataType = dataType;
+    public TimestampWithTimezoneConverter(DataType dataType) {
+      this.format = dataType.getFormat();
     }
 
     @Override
     public OffsetDateTime convert(Object data) {
-      final FieldConverter<Object, OffsetDateTime> converter =
-          StandardFieldConverterRegistry.getRegistry().getFieldConverter(OffsetDateTime.class);
-      return converter.convertField(data, Optional.ofNullable(dataType.getFormat()), null);
+      if (data == null) {
+        System.out.println("[DEBUG] Input is null.");
+        return null;
+      }
+
+      if (data instanceof OffsetDateTime) {
+        System.out.println("[DEBUG] Input is already OffsetDateTime: " + data);
+        return (OffsetDateTime) data;
+      }
+
+      if (data instanceof Timestamp) {
+        OffsetDateTime odt =
+            ((Timestamp) data)
+                .toInstant()
+                .atOffset(ZoneOffset.systemDefault().getRules().getOffset(Instant.now()));
+        System.out.println("[DEBUG] Converted Timestamp to OffsetDateTime: " + odt);
+        return odt;
+      }
+
+      if (data instanceof String) {
+        String raw = ((String) data).trim();
+        System.out.println("[DEBUG] Parsing string: " + raw);
+
+        // Step 1: Try custom format
+        if (format != null) {
+          try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format, Locale.ENGLISH);
+            System.out.println("[DEBUG] Trying custom format: " + format);
+
+            if (containsZone(format)) {
+              return OffsetDateTime.parse(raw, formatter);
+            } else {
+              LocalDateTime ldt = LocalDateTime.parse(raw, formatter);
+              return ldt.atOffset(ZoneOffset.systemDefault().getRules().getOffset(Instant.now()));
+            }
+
+          } catch (DateTimeParseException e) {
+            System.out.println("[DEBUG] Failed to parse with custom format: " + format);
+          }
+        }
+
+        // Step 2: Try known formats
+        List<String> formatStrings =
+            List.of(
+                "dd-MMM-yy hh.mm.ss.SSSSSSSSS a", // Oracle full
+                "dd-MMM-yy hh.mm.ss.SSSSSS a",
+                "dd-MMM-yy hh.mm.ss a",
+                "yyyy-MM-dd HH:mm:ss.SSSSSS",
+                "yyyy-MM-dd HH:mm:ss.SSS",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
+                "yyyy-MM-dd HH:mm:ssXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSSSS");
+
+        for (String fmt : formatStrings) {
+          try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(fmt, Locale.ENGLISH);
+            System.out.println("[DEBUG] Trying formatter: " + fmt);
+
+            if (containsZone(fmt)) {
+              OffsetDateTime odt = OffsetDateTime.parse(raw, formatter);
+              System.out.println("[DEBUG] Parsed with OffsetDateTime: " + odt);
+              return odt;
+            } else {
+              LocalDateTime ldt = LocalDateTime.parse(raw, formatter);
+              OffsetDateTime odt =
+                  ldt.atOffset(ZoneOffset.systemDefault().getRules().getOffset(Instant.now()));
+              System.out.println("[DEBUG] Parsed with LocalDateTime + offset: " + odt);
+              return odt;
+            }
+
+          } catch (DateTimeParseException e) {
+            System.out.println("[DEBUG] Failed with formatter: " + fmt);
+          }
+        }
+
+        throw new IllegalArgumentException("Unparseable OffsetDateTime string: " + raw);
+      }
+
+      throw new IllegalArgumentException("Unsupported type for OffsetDateTime: " + data.getClass());
+    }
+
+    private boolean containsZone(String fmt) {
+      return fmt.contains("X") || fmt.contains("Z") || fmt.contains("z");
     }
   }
 
@@ -152,10 +320,6 @@ public class GenericDataConverters {
 
     private final int length;
 
-    FixedConverter(int length) {
-      this.length = length;
-    }
-
     @Override
     public byte[] convert(Byte[] data) {
       if (data == null) {
@@ -165,6 +329,10 @@ public class GenericDataConverters {
           data.length == length,
           String.format("Cannot write byte array of length %s as fixed[%s]", data.length, length));
       return ArrayUtils.toPrimitive(data);
+    }
+
+    FixedConverter(int length) {
+      this.length = length;
     }
   }
 

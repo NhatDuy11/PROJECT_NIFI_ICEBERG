@@ -39,7 +39,7 @@ public class IcebergHiveCatalogService extends AbstractCatalogService {
           .displayName("Hive Metastore URI")
           .description(
               "The URI location(s) for the Hive metastore; note that this is not the location of the Hive Server, e.g. \"thrift://hive-iceberg.default.svc.cluster.local:9083\".")
-          .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+          .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
           .addValidator(StandardValidators.URI_LIST_VALIDATOR)
           .required(true)
           .build();

@@ -37,5 +37,9 @@
             <version>${nifi.version}</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-utils</artifactId>
+        </dependency>
     </dependencies>
 </project>
