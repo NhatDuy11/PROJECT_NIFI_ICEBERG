@@ -336,14 +336,83 @@ public class GenericDataConverters {
     }
   }
 
-  static class BinaryConverter extends DataConverter<Byte[], ByteBuffer> {
-
+  static class BinaryConverter extends DataConverter<Object, ByteBuffer> {
     @Override
-    public ByteBuffer convert(Byte[] data) {
+    public ByteBuffer convert(Object data) {
       if (data == null) {
         return null;
       }
-      return ByteBuffer.wrap(ArrayUtils.toPrimitive(data));
+
+      // Xử lý trường hợp dữ liệu là Byte[] (trường hợp hiện tại)
+      if (data instanceof Byte[]) {
+        return ByteBuffer.wrap(ArrayUtils.toPrimitive((Byte[]) data));
+      }
+
+      // Xử lý trường hợp dữ liệu là Object[] (từ Oracle BLOB qua Avro)
+      if (data instanceof Object[]) {
+        Object[] objectArray = (Object[]) data;
+        byte[] byteArray = new byte[objectArray.length];
+
+        for (int i = 0; i < objectArray.length; i++) {
+          if (objectArray[i] instanceof Byte) {
+            byteArray[i] = (Byte) objectArray[i];
+          } else if (objectArray[i] instanceof Integer) {
+            // Xử lý trường hợp Integer được cast thành byte
+            byteArray[i] = ((Integer) objectArray[i]).byteValue();
+          } else if (objectArray[i] instanceof Short) {
+            // Xử lý trường hợp Short được cast thành byte
+            byteArray[i] = ((Short) objectArray[i]).byteValue();
+          } else if (objectArray[i] instanceof Long) {
+            // Xử lý trường hợp Long được cast thành byte
+            byteArray[i] = ((Long) objectArray[i]).byteValue();
+          } else if (objectArray[i] instanceof Float) {
+            // Xử lý trường hợp Float được cast thành byte
+            byteArray[i] = ((Float) objectArray[i]).byteValue();
+          } else if (objectArray[i] instanceof Double) {
+            // Xử lý trường hợp Double được cast thành byte
+            byteArray[i] = ((Double) objectArray[i]).byteValue();
+          } else if (objectArray[i] instanceof Character) {
+            // Xử lý trường hợp Character được cast thành byte
+            byteArray[i] = (byte) ((Character) objectArray[i]).charValue();
+          } else if (objectArray[i] instanceof Boolean) {
+            // Xử lý trường hợp Boolean được cast thành byte (true=1, false=0)
+            byteArray[i] = ((Boolean) objectArray[i]) ? (byte) 1 : (byte) 0;
+          } else if (objectArray[i] instanceof String) {
+            // Xử lý trường hợp String - lấy byte đầu tiên của UTF-8 encoding
+            String str = (String) objectArray[i];
+            if (!str.isEmpty()) {
+              byte[] stringBytes = str.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+              byteArray[i] = stringBytes[0]; // Lấy byte đầu tiên
+            } else {
+              byteArray[i] = 0; // Empty string thành 0
+            }
+          } else if (objectArray[i] == null) {
+            // Xử lý trường hợp null
+            byteArray[i] = 0;
+          } else {
+            throw new IllegalArgumentException(
+                "Unsupported element type in Object[] for binary conversion: "
+                    + objectArray[i].getClass()
+                    + " at index "
+                    + i);
+          }
+        }
+
+        return ByteBuffer.wrap(byteArray);
+      }
+
+      // Xử lý trường hợp dữ liệu đã là byte[]
+      if (data instanceof byte[]) {
+        return ByteBuffer.wrap((byte[]) data);
+      }
+
+      // Xử lý trường hợp dữ liệu đã là ByteBuffer
+      if (data instanceof ByteBuffer) {
+        return (ByteBuffer) data;
+      }
+
+      throw new IllegalArgumentException(
+          "Unsupported data type for binary conversion: " + data.getClass());
     }
   }
 

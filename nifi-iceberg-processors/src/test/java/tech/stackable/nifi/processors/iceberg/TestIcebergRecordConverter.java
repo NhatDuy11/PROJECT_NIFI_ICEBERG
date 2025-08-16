@@ -22,6 +22,7 @@ import static org.apache.iceberg.FileFormat.PARQUET;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -229,6 +230,12 @@ public class TestIcebergRecordConverter {
           Types.NestedField.optional(2, "fielD3", Types.StringType.get()),
           Types.NestedField.optional(3, "field4", Types.StringType.get()));
 
+  private static final Schema BLOB_SCHEMA =
+      new Schema(
+          Types.NestedField.optional(0, "id", Types.IntegerType.get()),
+          Types.NestedField.optional(1, "blob_data", Types.BinaryType.get()),
+          Types.NestedField.optional(2, "name", Types.StringType.get()));
+
   private static final Schema UNORDERED_SCHEMA =
       new Schema(
           Types.NestedField.optional(0, "field1", Types.StringType.get()),
@@ -401,6 +408,17 @@ public class TestIcebergRecordConverter {
     fields.add(new RecordField("Field3", RecordFieldType.STRING.getDataType()));
     fields.add(new RecordField("fielD4", RecordFieldType.STRING.getDataType()));
 
+    return new SimpleRecordSchema(fields);
+  }
+
+  private static RecordSchema getBlobSchema() {
+    List<RecordField> fields = new ArrayList<>();
+    fields.add(new RecordField("id", RecordFieldType.INT.getDataType()));
+    fields.add(
+        new RecordField(
+            "blob_data",
+            RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType())));
+    fields.add(new RecordField("name", RecordFieldType.STRING.getDataType()));
     return new SimpleRecordSchema(fields);
   }
 
@@ -586,6 +604,24 @@ public class TestIcebergRecordConverter {
     values.put("fielD4", "Text4");
 
     return new MapRecord(getCaseInsensitiveSchema(), values);
+  }
+
+  private static Record setupBlobTestRecord() {
+    // Mô phỏng Object[] từ Avro deserialization của Oracle BLOB
+    Object[] blobObjectArray = {
+      (byte) 72, // 'H'
+      (byte) 101, // 'e'
+      (byte) 108, // 'l'
+      (byte) 108, // 'l'
+      (byte) 111 // 'o'
+    };
+
+    Map<String, Object> values = new HashMap<>();
+    values.put("id", 1);
+    values.put("blob_data", blobObjectArray); // Object[] như từ Avro
+    values.put("name", "Test BLOB Record");
+
+    return new MapRecord(getBlobSchema(), values);
   }
 
   private static Record setupUnorderedTestRecord() {
@@ -1197,6 +1233,211 @@ public class TestIcebergRecordConverter {
     assertInstanceOf(Integer.class, elementGetter.getElementOrNull(testArray[0]));
     assertInstanceOf(String.class, elementGetter.getElementOrNull(testArray[1]));
     assertInstanceOf(Long.class, elementGetter.getElementOrNull(testArray[2]));
+  }
+
+  @Test
+  public void testObjectArrayBlobConversion() throws IOException {
+    RecordSchema nifiSchema = getBlobSchema();
+    Record record = setupBlobTestRecord();
+
+    // Sử dụng IcebergRecordConverter để convert
+    IcebergRecordConverter recordConverter =
+        new IcebergRecordConverter(
+            BLOB_SCHEMA,
+            nifiSchema,
+            FileFormat.PARQUET,
+            UnmatchedColumnBehavior.IGNORE_UNMATCHED_COLUMN,
+            logger);
+
+    // Convert NiFi record thành Iceberg GenericRecord
+    GenericRecord genericRecord = recordConverter.convert(record);
+
+    // Ghi vào file
+    writeTo(FileFormat.PARQUET, BLOB_SCHEMA, genericRecord, tempFile);
+
+    // Đọc lại và verify
+    List<GenericRecord> results = readFrom(FileFormat.PARQUET, BLOB_SCHEMA, tempFile.toInputFile());
+
+    assertEquals(1, results.size());
+    GenericRecord resultRecord = results.get(0);
+
+    // Verify các field
+    assertEquals(Integer.valueOf(1), resultRecord.get(0, Integer.class));
+
+    // Verify BLOB data đã được convert đúng từ Object[] thành ByteBuffer
+    ByteBuffer blobResult = resultRecord.get(1, ByteBuffer.class);
+    assertNotNull(blobResult);
+
+    // Convert ByteBuffer thành byte[] để so sánh
+    byte[] expectedBytes = {72, 101, 108, 108, 111}; // "Hello" in bytes
+    assertArrayEquals(expectedBytes, blobResult.array());
+
+    assertEquals("Test BLOB Record", resultRecord.get(2, String.class));
+  }
+
+  @Test
+  public void testObjectArrayBlobWithIntegerValues() throws IOException {
+    // Mô phỏng Object[] với Integer values từ Avro
+    Object[] blobObjectArray = {
+      Integer.valueOf(65), // 'A'
+      Integer.valueOf(66), // 'B'
+      Integer.valueOf(67) // 'C'
+    };
+
+    Map<String, Object> values = new HashMap<>();
+    values.put("id", 2);
+    values.put("blob_data", blobObjectArray);
+    values.put("name", "Test BLOB with Integers");
+
+    Record record = new MapRecord(getBlobSchema(), values);
+
+    IcebergRecordConverter recordConverter =
+        new IcebergRecordConverter(
+            BLOB_SCHEMA,
+            getBlobSchema(),
+            FileFormat.PARQUET,
+            UnmatchedColumnBehavior.IGNORE_UNMATCHED_COLUMN,
+            logger);
+
+    GenericRecord genericRecord = recordConverter.convert(record);
+    writeTo(FileFormat.PARQUET, BLOB_SCHEMA, genericRecord, tempFile);
+
+    List<GenericRecord> results = readFrom(FileFormat.PARQUET, BLOB_SCHEMA, tempFile.toInputFile());
+
+    assertEquals(1, results.size());
+    GenericRecord resultRecord = results.get(0);
+
+    ByteBuffer blobResult = resultRecord.get(1, ByteBuffer.class);
+    byte[] expectedBytes = {65, 66, 67}; // "ABC" in bytes
+    assertArrayEquals(expectedBytes, blobResult.array());
+  }
+
+  @Test
+  public void testObjectArrayBlobConversionWithLogging() throws IOException {
+    System.out.println("=== BLOB Conversion Test với Logging Chi Tiết ===");
+
+    // Tạo dữ liệu đầu vào
+    Object[] blobObjectArray = {
+      (byte) 72, // 'H'
+      (byte) 101, // 'e'
+      (byte) 108, // 'l'
+      (byte) 108, // 'l'
+      (byte) 111 // 'o'
+    };
+
+    System.out.println("\n1. ĐẦU VÀO (INPUT):");
+    System.out.println("   - Kiểu dữ liệu: " + blobObjectArray.getClass().getSimpleName());
+    System.out.println("   - Độ dài: " + blobObjectArray.length);
+    System.out.print("   - Giá trị byte: [");
+    for (int i = 0; i < blobObjectArray.length; i++) {
+      System.out.print(blobObjectArray[i]);
+      if (i < blobObjectArray.length - 1) System.out.print(", ");
+    }
+    System.out.println("]");
+    System.out.print("   - Giá trị char: [");
+    for (int i = 0; i < blobObjectArray.length; i++) {
+      System.out.print("'" + (char) ((Byte) blobObjectArray[i]).byteValue() + "'");
+      if (i < blobObjectArray.length - 1) System.out.print(", ");
+    }
+    System.out.println("]");
+    System.out.println(
+        "   - Chuỗi tương đương: \"" + new String(new byte[] {72, 101, 108, 108, 111}) + "\"");
+
+    Map<String, Object> values = new HashMap<>();
+    values.put("id", 1);
+    values.put("blob_data", blobObjectArray);
+    values.put("name", "Test BLOB Record");
+
+    Record record = new MapRecord(getBlobSchema(), values);
+
+    System.out.println("\n2. NiFi Record Schema:");
+    System.out.println(
+        "   - id: "
+            + record.getValue("id")
+            + " ("
+            + record.getValue("id").getClass().getSimpleName()
+            + ")");
+    System.out.println(
+        "   - blob_data: "
+            + record.getValue("blob_data").getClass().getSimpleName()
+            + "["
+            + ((Object[]) record.getValue("blob_data")).length
+            + "]");
+    System.out.println(
+        "   - name: \""
+            + record.getValue("name")
+            + "\" ("
+            + record.getValue("name").getClass().getSimpleName()
+            + ")");
+
+    // Chuyển đổi
+    IcebergRecordConverter recordConverter =
+        new IcebergRecordConverter(
+            BLOB_SCHEMA,
+            getBlobSchema(),
+            FileFormat.PARQUET,
+            UnmatchedColumnBehavior.IGNORE_UNMATCHED_COLUMN,
+            logger);
+
+    System.out.println("\n3. QUÁ TRÌNH CHUYỂN ĐỔI:");
+    System.out.println("   - Từ: NiFi Record (Object[]) → Iceberg GenericRecord (ByteBuffer)");
+    System.out.println("   - Sử dụng: BinaryConverter trong GenericDataConverters");
+
+    GenericRecord genericRecord = recordConverter.convert(record);
+
+    System.out.println("\n4. ĐẦU RA SAU CHUYỂN ĐỔI (OUTPUT):");
+    System.out.println("   - id: " + genericRecord.get(0, Integer.class));
+
+    ByteBuffer blobResult = genericRecord.get(1, ByteBuffer.class);
+    System.out.println("   - blob_data kiểu: " + blobResult.getClass().getSimpleName());
+    System.out.println("   - blob_data capacity: " + blobResult.capacity());
+    System.out.println("   - blob_data position: " + blobResult.position());
+    System.out.println("   - blob_data limit: " + blobResult.limit());
+
+    byte[] resultBytes = blobResult.array();
+    System.out.print("   - Giá trị byte: [");
+    for (int i = 0; i < resultBytes.length; i++) {
+      System.out.print(resultBytes[i]);
+      if (i < resultBytes.length - 1) System.out.print(", ");
+    }
+    System.out.println("]");
+
+    System.out.print("   - Giá trị char: [");
+    for (int i = 0; i < resultBytes.length; i++) {
+      System.out.print("'" + (char) resultBytes[i] + "'");
+      if (i < resultBytes.length - 1) System.out.print(", ");
+    }
+    System.out.println("]");
+
+    System.out.println("   - Chuỗi khôi phục: \"" + new String(resultBytes) + "\"");
+    System.out.println("   - name: \"" + genericRecord.get(2, String.class) + "\"");
+
+    // Ghi vào file và đọc lại
+    writeTo(FileFormat.PARQUET, BLOB_SCHEMA, genericRecord, tempFile);
+    List<GenericRecord> results = readFrom(FileFormat.PARQUET, BLOB_SCHEMA, tempFile.toInputFile());
+
+    System.out.println("\n5. SAU KHI GHI VÀ ĐỌC TỪ PARQUET:");
+    GenericRecord resultRecord = results.get(0);
+    ByteBuffer finalBlob = resultRecord.get(1, ByteBuffer.class);
+    byte[] finalBytes = finalBlob.array();
+
+    System.out.println("   - Dữ liệu vẫn giữ nguyên: " + Arrays.equals(resultBytes, finalBytes));
+    System.out.println("   - Chuỗi cuối cùng: \"" + new String(finalBytes) + "\"");
+
+    System.out.println("\n6. KẾT LUẬN:");
+    System.out.println("   ✓ Object[] → ByteBuffer: Thành công");
+    System.out.println(
+        "   ✓ Dữ liệu được bảo toàn: "
+            + Arrays.equals(new byte[] {72, 101, 108, 108, 111}, finalBytes));
+    System.out.println("   ✓ Có thể lưu trữ trong Iceberg VARBINARY");
+    System.out.println("   ✓ Có thể đọc lại chính xác");
+
+    // Assertions
+    assertEquals(1, results.size());
+    assertEquals(Integer.valueOf(1), resultRecord.get(0, Integer.class));
+    assertNotNull(finalBlob);
+    assertArrayEquals(new byte[] {72, 101, 108, 108, 111}, finalBytes);
+    assertEquals("Test BLOB Record", resultRecord.get(2, String.class));
   }
 
   private void writeTo(
